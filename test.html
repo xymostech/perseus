@@ -89,6 +89,7 @@
 <script src="/build/widgets/dropdown.js"></script>
 <script src="/build/widgets/table.js"></script>
 <script src="/build/widgets/expression.js"></script>
+<script src="/build/widgets/ordering.js"></script>
 <script src="/build/item-renderer.js"></script>
 <script src="/build/item-editor.js"></script>
 -->
@@ -109,6 +110,7 @@
 <script src="/src/widgets/dropdown.js" type="text/jsx"></script>
 <script src="/src/widgets/table.js" type="text/jsx"></script>
 <script src="/src/widgets/expression.js" type="text/jsx"></script>
+<script src="/src/widgets/ordering.js" type="text/jsx"></script>
 <script src="/src/item-renderer.js" type="text/jsx"></script>
 <script src="/src/item-editor.js" type="text/jsx"></script>
 
@@ -127,7 +129,7 @@ $('#scorePreview').on('click', function() {
 
 Perseus.init({}).then(function() {
     editor = React.renderComponent(Perseus.ItemEditor(
-{"question":{"content":"How many monkeys swing from $10$ branches of **trees**?"},"answerArea":{
+{"question":{"content":"How many monkeys swing from $10$ branches of **trees**? [[☃ orderer 1]]"},"answerArea":{
     "type": "expression",
     "options": {
         "value": "2*5",
