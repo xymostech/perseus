@@ -1,145 +1,295 @@
 /** @jsx React.DOM */
 (function(Perseus) {
 
-var Orderer = React.createClass({
+var Draggable = React.createClass({
     getDefaultProps: function() {
         return {
-            current: [],
-            options: [
-                {content: "Hello"},
-                {content: "World $blah$"}
-            ]
+            floating: false,
+            placeholder: false,
+            content: "",
+            onMouseDown: function() {},
         };
     },
 
     render: function() {
-        debugger;
-        var sortable = <div class="sortable ui-helper-clearfix"
-                            ref="orderer"><ul>{_.map(this.props.current, function(opt) {
-            return <li data-content={opt}>{opt}</li>;
-        })}</ul></div>;
-
-        var bank = <div class="sortable bank ui-helper-clearfix"
-                        ref="bank"><ul>{_.map(this.props.options, function(opt) {
-            return <li data-content={opt.content}>{opt.content}</li>;
-        })}</ul></div>;
-
-        return <div>{sortable}{bank}</div>;
-    },
-
-    componentDidMount: function() {
-        var component = this;
-        var placeholder = $("<li>");
-        placeholder.addClass("placeholder");
-
-        var fake_draggable = $(".fake-draggable");
-        if (fake_draggable.length === 0) {
-            fake_draggable = $("<ul>");
-            fake_draggable.addClass("fake-draggable").addClass("sortable-element");
-            fake_draggable.appendTo("#perseus");
+        var style = {};
+        if (this.props.floating) {
+            style.position = "fixed";
+            style.left = this.props.startOffset.left;
+            style.top = this.props.startOffset.top;
+        }
+        if (this.props.width) {
+            style.width = this.props.width;
+        }
+        if (this.props.hidden) {
+            style.display = "none";
+        } else {
+            style.display = "block";
         }
 
-        var $list = $(this.refs.orderer.getDOMNode()).children(":first");
-        var $bank = $(this.refs.bank.getDOMNode()).children(":first");
+        var className = [];
+        if (this.props.placeholder) {
+            className.push("placeholder");
+        }
+        if (this.props.floating) {
+            className.push("dragging");
+        }
 
-        var $parent = $list.parent().parent();
+        var rendererProps = _.pick(this.props, "content");
 
-        $parent.on("vmousedown", "li", function(event) {
-            if (event.which !== 0 && event.which !== 1) {
-                return;
-            }
+        return <li className={className.join(" ")}
+                   style={style}
+                   onMouseDown={this.onMouseDown}
+                   onTouchStart={this.onMouseDown}>
+                {Perseus.Renderer(rendererProps)}
+            </li>;
+    },
 
-            event.preventDefault();
+    onMouseDown: React.autoBind(function(event) {
+        if (event.data.rightMouseButton) {
+            return;
+        }
 
-            var origTile = this,
-                inBank = $bank.has(this).length > 0,
-                tile = $(origTile).clone()[0],
-                offset = $(origTile).offset(),
-                click = {
-                    left: event.pageX - offset.left - 3,
-                    top: event.pageY - offset.top - 3
-                },
-                tileIndex = $(tile).index(),
-                origIndex = $(tile).index();
+        this.props.onMouseDown(this, event);
+    }),
 
-            $(tile).addClass("dragging")
-                   .css({ position: "absolute", "z-index": 100 })
-                   .offset({
-                       left: offset.left,
-                       top: offset.top
-                   })
-                   .width($(origTile).width());
-
-            placeholder.width($(origTile).width());
-            if (inBank) {
-                placeholder.prependTo($list);
-            } else {
-                placeholder.insertAfter(tile);
-            }
-
-            if (!inBank) {
-                $(origTile).hide();
-            }
-
-            $(tile).appendTo(fake_draggable);
-
-            $(document).bind("vmousemove vmouseup", function(event) {
-                event.preventDefault();
-                if (event.type === "vmousemove") {
-                    $(tile).offset({
-                        left: event.pageX - click.left,
-                        top: event.pageY - click.top
-                    });
-                    var leftEdge = $list.offset().left,
-                        midWidth = $(tile).offset().left - leftEdge,
-                        index = 0,
-                        sumWidth = 0;
-
-                    $list.children("li").each(function() {
-                        if (this === placeholder[0] || this === tile) {
-                            return;
-                        }
-                        if (midWidth > sumWidth + $(this).outerWidth(true) / 2) {
-                            index += 1;
-                        }
-                        sumWidth += $(this).outerWidth(true);
-                    });
-
-                    if (index !== tileIndex) {
-                        tileIndex = index;
-                        if (index === 0) {
-                            placeholder.prependTo($list);
-                        } else {
-                            placeholder.detach();
-                            var preceeding = $list.children("li")[index - 1];
-                            placeholder.insertAfter(preceeding);
-                        }
-                    }
-                } else if (event.type === "vmouseup") {
-                    $(document).unbind("vmousemove vmouseup");
-                    debugger;
-                    var curr = _.map(component.props.current, function(elem) { return _.clone(elem); });
-                    if (!inBank && origIndex > tileIndex) {
-                        curr.splice(origIndex, 1);
-                    }
-                    curr.splice(tileIndex, 0, _.clone($(tile).data("content")));
-                    if (!inBank && origIndex <= tileIndex) {
-                        curr.splice(origIndex, 1);
-                    }
-                    $(tile).detach();
-                    placeholder.detach();
-                    component.props.onChange({current: curr});
-                }
-            });
-        });
+    componentDidMount: function() {
+        if (this.props.floating) {
+            $(document).on("vmousemove", this.onVMouseMove);
+            $(document).on("vmouseup", this.onVMouseUp);
+        }
     },
 
     componentWillUnmount: function() {
-        $(this.refs.orderer.getDOMNode()).off("vmousedown");
+        if (this.props.floating) {
+            $(document).off("vmousemove", this.onVMouseMove);
+            $(document).off("vmouseup", this.onVMouseUp);
+        }
+    },
+
+    onVMouseMove: React.autoBind(function(event) {
+        event.preventDefault();
+        this.setOffset(event.pageX, event.pageY);
+        this.props.onMouseMove(this);
+    }),
+
+    onVMouseUp: React.autoBind(function(event) {
+        event.preventDefault();
+        this.props.onMouseUp(this, event);
+    }),
+
+    setOffset: React.autoBind(function(x, y) {
+        this.getDOMNode().style.left = (this.props.startOffset.left + x - this.props.startMouse.left) + "px";
+        this.getDOMNode().style.top = (this.props.startOffset.top + y - this.props.startMouse.top) + "px";
+    })
+});
+
+var Orderer = React.createClass({
+    getDefaultProps: function() {
+        return {
+            current: [],
+            options: []
+        };
+    },
+
+    getInitialState: function() {
+        return {
+            current: [],
+            dragging: false
+        };
+    },
+
+    render: function() {
+        var orderer = this;
+
+        var dragging = <div className="sortable sortable-hidden" ref="dragging">
+        <ul>{this.state.dragging ?
+            <Draggable floating={true}
+                       content={this.state.dragContent}
+                       startOffset={this.state.offsetPos}
+                       startMouse={this.state.grabPos}
+                       width={this.state.dragWidth}
+                       onMouseUp={this.onRelease}
+                       onMouseMove={this.onMouseMove}
+                       /> : null}
+        </ul></div>;
+
+        var sortable = <div className="sortable ui-helper-clearfix">
+            <ul ref="dragList">
+            {_.map(this.state.current, function(opt, i) {
+                return <Draggable content={opt.content}
+                                  placeholder={opt.placeholder}
+                                  hidden={opt.hidden}
+                                  width={opt.width}
+                                  index={i}
+                                  key={opt.key}
+                                  onMouseDown={orderer.onCurrentClick} />;
+            })}
+            </ul></div>;
+
+        var bank = <div ref="bank"
+                        className="sortable sortable-bank ui-helper-clearfix">
+            <ul>{_.map(this.props.options, function(opt, i) {
+                return <Draggable content={opt.content}
+                                  index={i}
+                                  onMouseDown={orderer.onBankClick} />;
+        })}</ul></div>;
+
+        return <div>{sortable}{bank}{dragging}</div>;
+    },
+
+    onCurrentClick: React.autoBind(function(draggable, event) {
+        var $draggable = $(draggable.getDOMNode());
+        var list = this.state.current.slice();
+
+        list.splice(draggable.props.index, 1, {
+            placeholder: true,
+            content: "",
+            width: $draggable.width(),
+            hidden: true,
+            key: _.uniqueId("perseus_placeholder_card_")
+        });
+
+        this.startDragging(draggable, event, list);
+    }),
+
+    onBankClick: React.autoBind(function(draggable, event) {
+        var $draggable = $(draggable.getDOMNode());
+        var list = this.state.current.slice();
+
+        list.splice(this.findCorrectIndex(draggable, list), 0, {
+            placeholder: true,
+            content: "",
+            width: $draggable.width(),
+            hidden: true,
+            key: _.uniqueId("perseus_placeholder_card_")
+        });
+
+        this.startDragging(draggable, event, list);
+    }),
+
+    onRelease: React.autoBind(function(draggable, event) {
+        var list = this.state.current.slice();
+        var index = this.placeholderIndex();
+
+        if (this.isCardInBank(draggable)) {
+            list.splice(index, 1);
+        } else {
+            var newCard = {
+                content: draggable.props.content,
+                key: _.uniqueId("perseus_draggable_card_"),
+                width: draggable.props.width
+            };
+
+            list.splice(index, 1, newCard);
+        }
+
+        this.props.onChange({
+            current: list
+        });
+        this.setState({
+            current: list,
+            dragging: false
+        });
+    }),
+
+    isCardInBank: function(draggable) {
+        var $draggable = $(draggable.getDOMNode()),
+            $bank = $(this.refs.bank.getDOMNode()),
+            draggableOffset = $draggable.offset(),
+            bankOffset = $bank.offset(),
+            draggableSize = {width: $draggable.outerWidth(true), height: $draggable.outerHeight(true)},
+            bankSize = {width: $bank.outerWidth(true), height: $bank.outerHeight(true)};
+
+        return draggableOffset.top + draggableSize.height / 2 > bankOffset.top;
+    },
+
+    onMouseMove: React.autoBind(function(draggable) {
+        var newList = this.state.current.slice();
+
+        newList[this.placeholderIndex()].hidden =
+                this.isCardInBank(draggable);
+
+        newList = this.reorderList(draggable, newList);
+
+        this.setState({current: newList});
+    }),
+
+    startDragging: function(draggable, event, list) {
+        var $draggable = $(draggable.getDOMNode());
+        var draggableOffset = $draggable.offset();
+
+        this.setState({
+            current: list,
+            dragging: true,
+            dragContent: draggable.props.content,
+            dragWidth: $draggable.width(),
+            grabPos: {
+                left: event.data.globalX,
+                top: event.data.globalY
+            },
+            offsetPos: {
+                left: draggableOffset.left,
+                top: draggableOffset.top
+            }
+        });
+    },
+
+    placeholderIndex: function() {
+        var index;
+        _.each(this.state.current, function(v, i) {
+            if (v.placeholder) {
+                index = i;
+            }
+        });
+        return index;
+    },
+
+    reorderList: function(draggable, list) {
+        var $dragList = $(this.refs.dragList.getDOMNode());
+
+        var index = this.findCorrectIndex(draggable, list);
+        var oldIndex = this.placeholderIndex();
+
+        if (index !== oldIndex) {
+            var placeholder;
+            list = _.reject(this.state.current, function(v) {
+                if (v.placeholder) {
+                    placeholder = v;
+                }
+                return v.placeholder;
+            });
+
+            list.splice(index, 0, placeholder);
+        }
+        return list;
+    },
+
+    findCorrectIndex: function(draggable, list) {
+        var $dragList = $(this.refs.dragList.getDOMNode()),
+            leftEdge = $dragList.offset().left,
+            midWidth = $(draggable.getDOMNode()).offset().left - leftEdge,
+            index = 0,
+            sumWidth = 0;
+
+        _.chain(this.refs.dragList.getDOMNode().childNodes)
+         .zip(list)
+         .reject(function(v) { return v[1].placeholder })
+         .each(function(v, i) {
+            var outerWidth = $(v[0]).outerWidth(true);
+            if (midWidth > sumWidth + outerWidth / 2) {
+                index += 1;
+            }
+            sumWidth += outerWidth;
+        });
+
+        return index;
     },
 
     toJSON: function(skipValidation) {
-        return {};
+        return {current: _.map(this.props.current, function(v) {
+            return v.content;
+        })};
     },
 
     simpleValidate: function(rubric) {
@@ -159,137 +309,157 @@ _.extend(Orderer, {
 var OrdererEditor = React.createClass({
     getDefaultProps: function() {
         return {
+            correctOptions: [{
+                content: "x"
+            }],
+            otherOptions: [{
+                content: "y"
+            }],
         };
     },
 
     render: function() {
-        return <div />;
+        var dropdownGroupName = _.uniqueId("perseus_orderer_");
+        return <div className="perseus-widget-orderer">
+            <div>Correct answer:</div>
+            <ul>
+                {this.props.correctOptions.map(function(option, i) {
+                    return <li>
+                        <div>
+                            <input
+                                type="text"
+                                ref={"correcteditor" + i}
+                                style={{
+                                    width: this.getTextWidth(option.content),
+                                    float: "left"
+                                }}
+                                onInput={
+                                    this.onCorrectContentChange.bind(this, i)
+                                }
+                                value={option.content} />
+                        </div>
+                    </li>;
+                }, this)}
+            </ul>
+
+            <span className="ui-helper-clearfix" />
+
+            <div className="add-option-container">
+                <a href="#" className="simple-button orange"
+                        onClick={this.addCorrectOption}>
+                    <span className="icon-plus" />
+                    Add a card
+                </a>
+            </div>
+
+            <div>Other cards:</div>
+
+            <ul>
+                {this.props.otherOptions.map(function(option, i) {
+                    return <li>
+                        <div>
+                            <input
+                                type="text"
+                                ref={"othereditor" + i}
+                                style={{
+                                    width: this.getTextWidth(option.content),
+                                    float: "left"
+                                }}
+                                onInput={
+                                    this.onOtherContentChange.bind(this, i)
+                                }
+                                value={option.content} />
+                        </div>
+                    </li>;
+                }, this)}
+            </ul>
+
+            <span className="ui-helper-clearfix" />
+
+            <div className="add-option-container">
+                <a href="#" className="simple-button orange"
+                        onClick={this.addOtherOption}>
+                    <span className="icon-plus" />
+                    Add a card
+                </a>
+            </div>
+        </div>;
     },
 
-    focus: function(i) {
+    addCorrectOption: React.autoBind(function(e) {
+        e.preventDefault();
+
+        var options = this.props.correctOptions;
+        var blankOption = {content: ""};
+        this.props.onChange({correctOptions: options.concat([blankOption])});
+        this.correctFocus(options.length);
+    }),
+
+    addOtherOption: React.autoBind(function(e) {
+        e.preventDefault();
+
+        var options = this.props.otherOptions;
+        var blankOption = {content: ""};
+        this.props.onChange({otherOptions: options.concat([blankOption])});
+        this.otherFocus(options.length);
+    }),
+
+    onCorrectContentChange: function(optionIndex, e) {
+        var options = this.props.correctOptions.slice();
+        var option = _.clone(options[optionIndex]);
+
+        option.content = e.target.value;
+        options[optionIndex] = option;
+        this.props.onChange({correctOptions: options});
+    },
+
+    onOtherContentChange: function(optionIndex, e) {
+        var options = this.props.otherOptions.slice();
+        var option = _.clone(options[optionIndex]);
+
+        option.content = e.target.value;
+        options[optionIndex] = option;
+        this.props.onChange({otherOptions: options});
+    },
+
+    getTextWidth: function(text) {
+        var testElement = $("<span>");
+        testElement.text(text);
+
+        testElement.appendTo("body");
+        var width = testElement.width();
+        testElement.remove();
+
+        return width + 5;
+    },
+
+    correctFocus: function(i) {
+        this.refs["correcteditor" + i].getDOMNode().focus();
+        return true;
+    },
+
+    otherFocus: function(i) {
+        this.refs["othereditor" + i].getDOMNode().focus();
         return true;
     },
 
     toJSON: function(skipValidation) {
-        return {};
+        var options =
+            _.chain(_.pluck(this.props.correctOptions, 'content'))
+             .union(_.pluck(this.props.otherOptions, 'content'))
+             .uniq()
+             .sort()
+             .map(function(content) {
+                 return { content: content };
+                })
+             .value();
+
+        return {options: options};
     }
 });
 
 Perseus.Widgets.register("orderer", Orderer);
 Perseus.Widgets.register("orderer-editor", OrdererEditor);
-
-var createSorter = function() {
-    var sorter = {};
-    var list;
-
-    sorter.init = function(element) {
-        list = $("[id=" + element + "]").last();
-        var container = list.wrap("<div>").parent();
-        var placeholder = $("<li>");
-        placeholder.addClass("placeholder");
-        container.addClass("sortable ui-helper-clearfix");
-        var tileWidth = list.find("li").outerWidth(true);
-        var numTiles = list.find("li").length;
-
-        list.find("li").each(function(tileNum, tile) {
-            $(tile).bind("vmousedown", function(event) {
-                if (event.type === "vmousedown" && (event.which === 1 || event.which === 0)) {
-                    event.preventDefault();
-                    $(tile).addClass("dragging");
-                    var tileIndex = $(this).index();
-                    placeholder.insertAfter(tile);
-                    placeholder.width($(tile).width());
-                    $(this).css("z-index", 100);
-                    var offset = $(this).offset();
-                    var click = {
-                        left: event.pageX - offset.left - 3,
-                        top: event.pageY - offset.top - 3
-                    };
-                    $(tile).css({ position: "absolute" });
-                    $(tile).offset({
-                        left: offset.left,
-                        top: offset.top
-                    });
-
-                    $(document).bind("vmousemove vmouseup", function(event) {
-                        event.preventDefault();
-                        if (event.type === "vmousemove") {
-                            $(tile).offset({
-                                left: event.pageX - click.left,
-                                top: event.pageY - click.top
-                            });
-                            var leftEdge = list.offset().left;
-                            var midWidth = $(tile).offset().left - leftEdge;
-                            var index = 0;
-                            var sumWidth = 0;
-                            list.find("li").each(function() {
-                                if (this === placeholder[0] || this === tile) {
-                                    return;
-                                }
-                                if (midWidth > sumWidth + $(this).outerWidth(true) / 2) {
-                                    index += 1;
-                                }
-                                sumWidth += $(this).outerWidth(true);
-                            });
-                            if (index !== tileIndex) {
-                                tileIndex = index;
-                                if (index === 0) {
-                                    placeholder.prependTo(list);
-                                    $(tile).prependTo(list);
-                                } else {
-                                    placeholder.detach();
-                                    $(tile).detach();
-                                    var preceeding = list.find("li")[index - 1];
-                                    placeholder.insertAfter(preceeding);
-                                    $(tile).insertAfter(preceeding);
-                                }
-                            }
-                        } else if (event.type === "vmouseup") {
-                            $(document).unbind("vmousemove vmouseup");
-                            var position = $(tile).offset();
-                            $(position).animate(placeholder.offset(), {
-                                duration: 150,
-                                step: function(now, fx) {
-                                    position[fx.prop] = now;
-                                    $(tile).offset(position);
-                                },
-                                complete: function() {
-                                    $(tile).css("z-index", 0);
-                                    placeholder.detach();
-                                    $(tile).css({ position: "static" });
-                                    $(tile).removeClass("dragging");
-                                }
-                            });
-                        }
-                    });
-                }
-            });
-        });
-    };
-
-    sorter.getContent = function() {
-        content = [];
-        list.find("li").each(function(tileNum, tile) {
-            content.push($.trim($(tile).find(".sort-key").text()));
-        });
-        return content;
-    };
-
-    sorter.setContent = function(content) {
-        var tiles = [];
-        $.each(content, function(n, sortKey) {
-            var tile = list.find("li .sort-key").filter(function() {
-                // sort-key must match exactly
-                return $(this).text() === sortKey;
-            }).closest("li").get(0);
-            $(tile).detach();  // remove matched tile so you can have duplicates
-            tiles.push(tile);
-        });
-        list.append(tiles);
-    };
-
-    return sorter;
-}
 
 })(Perseus);
 

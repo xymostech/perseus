@@ -129,7 +129,15 @@ $('#scorePreview').on('click', function() {
 
 Perseus.init({}).then(function() {
     editor = React.renderComponent(Perseus.ItemEditor(
-{"question":{"content":"How many monkeys swing from $10$ branches of **trees**? [[☃ orderer 1]]"},"answerArea":{
+{"question":{
+    "content": "How many monkeys swing from $10$ branches of **trees**? [[☃ orderer 1]]",
+        "widgets": {
+            "orderer 1": {
+                "options": {},
+                "type": "orderer"
+            }
+        }
+    },"answerArea":{
     "type": "expression",
     "options": {
         "value": "2*5",
