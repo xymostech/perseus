@@ -13,10 +13,10 @@ var Draggable = React.createClass({
 
     render: function() {
         var style = {};
-        if (this.props.floating) {
+        if (this.props.floating || this.props.animating) {
             style.position = "fixed";
-            style.left = this.props.startOffset.left;
-            style.top = this.props.startOffset.top;
+            style.left = this.props.startOffset.left - $(document).scrollLeft();
+            style.top = this.props.startOffset.top - $(document).scrollTop();
         }
         if (this.props.width) {
             style.width = this.props.width;
@@ -27,12 +27,18 @@ var Draggable = React.createClass({
             style.display = "block";
         }
 
-        var className = [];
+        var className = ["card"];
         if (this.props.placeholder) {
             className.push("placeholder");
         }
         if (this.props.floating) {
             className.push("dragging");
+        }
+        if (this.props.dragHint) {
+            className.push("drag-hint");
+        }
+        if (this.props.stack) {
+            className.push("stack");
         }
 
         var rendererProps = _.pick(this.props, "content");
@@ -50,37 +56,70 @@ var Draggable = React.createClass({
             return;
         }
 
+        event.preventDefault();
         this.props.onMouseDown(this, event);
     }),
 
     componentDidMount: function() {
+        console.log("Mounting...");
         if (this.props.floating) {
             $(document).on("vmousemove", this.onVMouseMove);
             $(document).on("vmouseup", this.onVMouseUp);
         }
+
+        if (this.props.animating) {
+            $(this.getDOMNode()).animate(
+                this.props.animateTo,
+                100,
+                this.props.onAnimateEnd
+            );
+        }
     },
 
     componentWillUnmount: function() {
+        console.log("Unounting...");
         if (this.props.floating) {
             $(document).off("vmousemove", this.onVMouseMove);
             $(document).off("vmouseup", this.onVMouseUp);
         }
     },
 
+    componentDidUpdate: function(prevProps, prevState, rootNode) {
+        if (this.props.animating && !prevProps.animating) {
+            $(this.getDOMNode()).animate(
+                this.props.animateTo,
+                100,
+                this.props.onAnimateEnd
+            );
+        }
+    },
+
     onVMouseMove: React.autoBind(function(event) {
-        event.preventDefault();
-        this.setOffset(event.pageX, event.pageY);
-        this.props.onMouseMove(this);
+        if (this.props.floating) {
+            event.preventDefault();
+            this.setOffset(event.pageX, event.pageY);
+            this.props.onMouseMove(this);
+        }
     }),
 
     onVMouseUp: React.autoBind(function(event) {
-        event.preventDefault();
-        this.props.onMouseUp(this, event);
+        if (this.props.floating) {
+            event.preventDefault();
+            this.props.onMouseUp(this, event);
+        }
     }),
 
     setOffset: React.autoBind(function(x, y) {
-        this.getDOMNode().style.left = (this.props.startOffset.left + x - this.props.startMouse.left) + "px";
-        this.getDOMNode().style.top = (this.props.startOffset.top + y - this.props.startMouse.top) + "px";
+        this.getDOMNode().style.left =
+            (this.props.startOffset.left +
+             x - this.props.startMouse.left -
+             $(document).scrollLeft()
+            ) + "px";
+        this.getDOMNode().style.top =
+            (this.props.startOffset.top +
+             y - this.props.startMouse.top -
+             $(document).scrollTop()
+            ) + "px";
     })
 });
 
@@ -88,7 +127,8 @@ var Orderer = React.createClass({
     getDefaultProps: function() {
         return {
             current: [],
-            options: []
+            options: [],
+            correctOptions: []
         };
     },
 
@@ -102,8 +142,7 @@ var Orderer = React.createClass({
     render: function() {
         var orderer = this;
 
-        var dragging = <div className="sortable sortable-hidden" ref="dragging">
-        <ul>{this.state.dragging ?
+        var dragging = this.state.dragging &&
             <Draggable floating={true}
                        content={this.state.dragContent}
                        startOffset={this.state.offsetPos}
@@ -111,10 +150,28 @@ var Orderer = React.createClass({
                        width={this.state.dragWidth}
                        onMouseUp={this.onRelease}
                        onMouseMove={this.onMouseMove}
-                       /> : null}
-        </ul></div>;
+                       key={this.state.dragKey}
+                       />;
 
-        var sortable = <div className="sortable ui-helper-clearfix">
+        var animating = this.state.animating &&
+            <Draggable floating={false}
+                       animating={true}
+                       content={this.state.dragContent}
+                       startOffset={this.state.offsetPos}
+                       width={this.state.dragWidth}
+                       animateTo={this.state.animateTo}
+                       onAnimateEnd={this.state.onAnimateEnd}
+                       key={this.state.dragKey}
+                       ref="animating"
+                       />;
+
+        var sortable = <div className="ui-helper-clearfix draggable-box">
+            {(this.state.current.length === 0 ||
+             (this.state.current.length === 1 &&
+              this.state.current[0].hidden)) &&
+                <Draggable dragHint={true}
+                           width={20} />
+            }
             <ul ref="dragList">
             {_.map(this.state.current, function(opt, i) {
                 return <Draggable content={opt.content}
@@ -125,17 +182,28 @@ var Orderer = React.createClass({
                                   key={opt.key}
                                   onMouseDown={orderer.onCurrentClick} />;
             })}
-            </ul></div>;
+            </ul>
+        </div>;
 
         var bank = <div ref="bank"
-                        className="sortable sortable-bank ui-helper-clearfix">
-            <ul>{_.map(this.props.options, function(opt, i) {
+                        style={{margin: "0px 13px 30px"}}
+                        className="ui-helper-clearfix">
+            <ul>
+            {_.map(this.props.options, function(opt, i) {
                 return <Draggable content={opt.content}
                                   index={i}
+                                  stack={true}
                                   onMouseDown={orderer.onBankClick} />;
-        })}</ul></div>;
+            })}
+            </ul>
+        </div>;
 
-        return <div>{sortable}{bank}{dragging}</div>;
+        return <div className="draggy-boxy-thing">
+                   {bank}
+                   {sortable}
+                   {dragging}
+                   {animating}
+               </div>;
     },
 
     onCurrentClick: React.autoBind(function(draggable, event) {
@@ -169,40 +237,61 @@ var Orderer = React.createClass({
     }),
 
     onRelease: React.autoBind(function(draggable, event) {
-        var list = this.state.current.slice();
+        var inCardBank = this.isCardInBank(draggable);
         var index = this.placeholderIndex();
 
-        if (this.isCardInBank(draggable)) {
-            list.splice(index, 1);
-        } else {
-            var newCard = {
-                content: draggable.props.content,
-                key: _.uniqueId("perseus_draggable_card_"),
-                width: draggable.props.width
-            };
+        var onAnimateEnd = function() {
+            var list = this.state.current.slice();
 
-            list.splice(index, 1, newCard);
+            if (inCardBank) {
+                list.splice(index, 1);
+            } else {
+                var newCard = {
+                    content: draggable.props.content,
+                    key: _.uniqueId("perseus_draggable_card_"),
+                    width: draggable.props.width
+                };
+
+                list.splice(index, 1, newCard);
+            }
+
+            this.props.onChange({
+                current: list
+            });
+            this.setState({
+                current: list,
+                dragging: false,
+                animating: false
+            });
+        }.bind(this);
+
+        var offset = $(draggable.getDOMNode()).offset();
+        var finalOffset = null;
+        if (inCardBank) {
+            _.chain(this.props.options)
+             .zip($(this.refs.bank.getDOMNode()).find("li"))
+             .each(function(opt) {
+                if (opt[0].content == draggable.props.content) {
+                    finalOffset = $(opt[1]).offset();
+                }
+             });
+        } else {
+            finalOffset =
+                $(this.refs.dragList.getDOMNode().childNodes[index]).offset();
         }
 
-        this.props.onChange({
-            current: list
-        });
-        this.setState({
-            current: list,
-            dragging: false
-        });
+        if (finalOffset == null) {
+            onAnimateEnd();
+        } else {
+            this.setState({
+                offsetPos: offset,
+                animateTo: finalOffset,
+                onAnimateEnd: onAnimateEnd,
+                animating: true,
+                dragging: false
+            });
+        }
     }),
-
-    isCardInBank: function(draggable) {
-        var $draggable = $(draggable.getDOMNode()),
-            $bank = $(this.refs.bank.getDOMNode()),
-            draggableOffset = $draggable.offset(),
-            bankOffset = $bank.offset(),
-            draggableSize = {width: $draggable.outerWidth(true), height: $draggable.outerHeight(true)},
-            bankSize = {width: $bank.outerWidth(true), height: $bank.outerHeight(true)};
-
-        return draggableOffset.top + draggableSize.height / 2 > bankOffset.top;
-    },
 
     onMouseMove: React.autoBind(function(draggable) {
         var newList = this.state.current.slice();
@@ -215,6 +304,16 @@ var Orderer = React.createClass({
         this.setState({current: newList});
     }),
 
+    isCardInBank: function(draggable) { var $draggable = $(draggable.getDOMNode()),
+            $bank = $(this.refs.bank.getDOMNode()),
+            draggableOffset = $draggable.offset(),
+            bankOffset = $bank.offset(),
+            draggableSize = {width: $draggable.outerWidth(true), height: $draggable.outerHeight(true)},
+            bankSize = {width: $bank.outerWidth(true), height: $bank.outerHeight(true)};
+
+        return draggableOffset.top + draggableSize.height / 2 < bankOffset.top + bankSize.height;
+    },
+
     startDragging: function(draggable, event, list) {
         var $draggable = $(draggable.getDOMNode());
         var draggableOffset = $draggable.offset();
@@ -224,6 +323,7 @@ var Orderer = React.createClass({
             dragging: true,
             dragContent: draggable.props.content,
             dragWidth: $draggable.width(),
+            dragKey: _.uniqueId("perseus_dragging_card_"),
             grabPos: {
                 left: event.data.globalX,
                 top: event.data.globalY
@@ -299,10 +399,25 @@ var Orderer = React.createClass({
 
 _.extend(Orderer, {
     validate: function(state, rubric) {
+        if (state.current.length === 0) {
+            return {
+                type: "invalid",
+                message: null
+            };
+        }
+
+        var correct = _.isEqual(
+            state.current,
+            _.pluck(rubric.correctOptions, 'content')
+        );
+
         return {
-            type: "invalid",
+            type: "points",
+            earned: correct ? 1 : 0,
+            total: 1,
             message: null
         };
+
     }
 });
 
@@ -319,70 +434,60 @@ var OrdererEditor = React.createClass({
     },
 
     render: function() {
-        var dropdownGroupName = _.uniqueId("perseus_orderer_");
         return <div className="perseus-widget-orderer">
             <div>Correct answer:</div>
             <ul>
                 {this.props.correctOptions.map(function(option, i) {
                     return <li>
-                        <div>
-                            <input
-                                type="text"
-                                ref={"correcteditor" + i}
-                                style={{
-                                    width: this.getTextWidth(option.content),
-                                    float: "left"
-                                }}
-                                onInput={
-                                    this.onCorrectContentChange.bind(this, i)
-                                }
-                                value={option.content} />
-                        </div>
+                        <input
+                            type="text"
+                            ref={"correcteditor" + i}
+                            style={{
+                                width: this.getTextWidth(option.content)
+                            }}
+                            onInput={
+                                this.onCorrectContentChange.bind(this, i)
+                            }
+                            value={option.content} />
                     </li>;
                 }, this)}
+                <li>
+                    <input type="text"
+                           ref={"correcteditor_extra"}
+                           onInput={this.addCorrectOption}
+                           style={{width: 0}}
+                           value={""} />
+                </li>
             </ul>
 
             <span className="ui-helper-clearfix" />
-
-            <div className="add-option-container">
-                <a href="#" className="simple-button orange"
-                        onClick={this.addCorrectOption}>
-                    <span className="icon-plus" />
-                    Add a card
-                </a>
-            </div>
 
             <div>Other cards:</div>
 
             <ul>
                 {this.props.otherOptions.map(function(option, i) {
                     return <li>
-                        <div>
-                            <input
-                                type="text"
-                                ref={"othereditor" + i}
-                                style={{
-                                    width: this.getTextWidth(option.content),
-                                    float: "left"
-                                }}
-                                onInput={
-                                    this.onOtherContentChange.bind(this, i)
-                                }
-                                value={option.content} />
-                        </div>
+                        <input type="text"
+                               ref={"othereditor" + i}
+                               style={{
+                                   width: this.getTextWidth(option.content)
+                               }}
+                               onInput={
+                                   this.onOtherContentChange.bind(this, i)
+                               }
+                               value={option.content} />
                     </li>;
                 }, this)}
+                <li>
+                    <input type="text"
+                           ref={"othereditor_extra"}
+                           onInput={this.addOtherOption}
+                           style={{width: 0}}
+                           value={""} />
+                </li>
             </ul>
 
             <span className="ui-helper-clearfix" />
-
-            <div className="add-option-container">
-                <a href="#" className="simple-button orange"
-                        onClick={this.addOtherOption}>
-                    <span className="icon-plus" />
-                    Add a card
-                </a>
-            </div>
         </div>;
     },
 
@@ -390,8 +495,9 @@ var OrdererEditor = React.createClass({
         e.preventDefault();
 
         var options = this.props.correctOptions;
-        var blankOption = {content: ""};
+        var blankOption = {content: e.target.value};
         this.props.onChange({correctOptions: options.concat([blankOption])});
+        e.target.value = "";
         this.correctFocus(options.length);
     }),
 
@@ -399,8 +505,9 @@ var OrdererEditor = React.createClass({
         e.preventDefault();
 
         var options = this.props.otherOptions;
-        var blankOption = {content: ""};
+        var blankOption = {content: e.target.value};
         this.props.onChange({otherOptions: options.concat([blankOption])});
+        e.target.value = "";
         this.otherFocus(options.length);
     }),
 
@@ -410,6 +517,18 @@ var OrdererEditor = React.createClass({
 
         option.content = e.target.value;
         options[optionIndex] = option;
+
+        var didDelete = false;
+        var i = options.length - 1;
+        for (; i >= 0 && options[i].content === ""; i--) {
+            options.splice(i, 1);
+            didDelete = true;
+        }
+
+        if (didDelete) {
+            this.correctFocus("_extra");
+        }
+
         this.props.onChange({correctOptions: options});
     },
 
@@ -419,6 +538,18 @@ var OrdererEditor = React.createClass({
 
         option.content = e.target.value;
         options[optionIndex] = option;
+
+        var didDelete = false;
+        var i = options.length - 1;
+        for (; i >= 0 && options[i].content === ""; i--) {
+            options.splice(i, 1);
+            didDelete = true;
+        }
+
+        if (didDelete) {
+            this.otherFocus("_extra");
+        }
+
         this.props.onChange({otherOptions: options});
     },
 
@@ -434,12 +565,16 @@ var OrdererEditor = React.createClass({
     },
 
     correctFocus: function(i) {
-        this.refs["correcteditor" + i].getDOMNode().focus();
+        var editor = this.refs["correcteditor" + i].getDOMNode();
+        editor.focus();
+        editor.setSelectionRange(editor.value.length, editor.value.length);
         return true;
     },
 
     otherFocus: function(i) {
-        this.refs["othereditor" + i].getDOMNode().focus();
+        var editor = this.refs["othereditor" + i].getDOMNode();
+        editor.focus();
+        editor.setSelectionRange(editor.value.length, editor.value.length);
         return true;
     },
 
@@ -448,13 +583,17 @@ var OrdererEditor = React.createClass({
             _.chain(_.pluck(this.props.correctOptions, 'content'))
              .union(_.pluck(this.props.otherOptions, 'content'))
              .uniq()
+             .reject(function(content) { return content === ""; })
              .sort()
              .map(function(content) {
                  return { content: content };
                 })
              .value();
 
-        return {options: options};
+        return {
+            options: options,
+            correctOptions: this.props.correctOptions
+        };
     }
 });
 
